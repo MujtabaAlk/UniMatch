@@ -103,7 +103,7 @@ logs = set()
 
 def init_log(name, level=logging.INFO):
     if (name, level) in logs:
-        return
+        return logging.getLogger(name)
     logs.add((name, level))
     logger = logging.getLogger(name)
     logger.setLevel(level)
