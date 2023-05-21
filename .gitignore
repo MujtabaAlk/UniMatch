@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Virtual Env
+venv/
+
+#  Jupyter Notebook
+.ipynb_checkpoints
+
+# project files
+pretrained/
+exp/
