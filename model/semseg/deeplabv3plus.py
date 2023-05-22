@@ -35,37 +35,68 @@ class DeepLabV3Plus(nn.Module):
 
         self.classifier = nn.Conv2d(256, cfg['nclass'], 1, bias=True)
 
-    def forward(self, x, need_fp=False):
+        # from ReCo model
+        self.project = nn.Sequential(
+            nn.Conv2d(256, 48, 1, bias=False),
+            nn.BatchNorm2d(48),
+            nn.ReLU(inplace=True),
+        )
+        self.representation = nn.Sequential(
+            nn.Conv2d(304, 256, 3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Conv2d(
+                256,
+                256, # should come from config default: 256
+                1,
+            )
+        )
+
+    def forward(self, x, need_fp=False, need_rep=False):
         h, w = x.shape[-2:]
 
         feats = self.backbone.base_forward(x)
         c1, c4 = feats[0], feats[-1]
 
         if need_fp:
-            outs = self._decode(torch.cat((c1, nn.Dropout2d(0.5)(c1))),
-                                torch.cat((c4, nn.Dropout2d(0.5)(c4))))
+            outs, rep = self._decode(
+                torch.cat((c1, nn.Dropout2d(0.5)(c1))),
+                torch.cat((c4, nn.Dropout2d(0.5)(c4))),
+                need_rep=need_rep
+            )
             outs = F.interpolate(outs, size=(h, w), mode="bilinear", align_corners=True)
             out, out_fp = outs.chunk(2)
 
+            if need_rep:
+                return out, out_fp, rep
+            
             return out, out_fp
 
-        out = self._decode(c1, c4)
+        out, rep = self._decode(c1, c4, need_rep=need_rep)
         out = F.interpolate(out, size=(h, w), mode="bilinear", align_corners=True)
 
+        if need_rep:
+            return out, rep
+        
         return out
 
-    def _decode(self, c1, c4):
+    def _decode(self, c1, c4, need_rep=False):
         c4 = self.head(c4)
         c4 = F.interpolate(c4, size=c1.shape[-2:], mode="bilinear", align_corners=True)
 
-        c1 = self.reduce(c1)
+        c1_red = self.reduce(c1)
 
-        feature = torch.cat([c1, c4], dim=1)
+        feature = torch.cat([c1_red, c4], dim=1)
         feature = self.fuse(feature)
 
         out = self.classifier(feature)
+        if need_rep:
+            # calculate rep form ReCo
+            c1_proj = self.project(c1)
+            representation = self.representation(torch.cat([c1_proj, c4], dim=1))
+            return out, representation
 
-        return out
+        return out, None
 
 
 def ASPPConv(in_channels, out_channels, atrous_rate):
